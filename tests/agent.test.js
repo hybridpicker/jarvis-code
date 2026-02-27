@@ -24,7 +24,15 @@ jest.mock('../cli/context-engine', () => ({
   getUsage: jest.fn().mockReturnValue({ used: 100, limit: 128000, percentage: 0.1 }),
 }));
 
-const { processInput, clearConversation, getConversationLength, getConversationMessages } = require('../cli/agent');
+jest.mock('../cli/session', () => ({
+  autoSave: jest.fn(),
+}));
+
+jest.mock('../cli/memory', () => ({
+  getMemoryContext: jest.fn().mockReturnValue(''),
+}));
+
+const { processInput, clearConversation, getConversationLength, getConversationMessages, setConversationMessages } = require('../cli/agent');
 const { callStream } = require('../cli/providers/registry');
 const { executeTool } = require('../cli/tools');
 
@@ -75,6 +83,16 @@ describe('agent.js', () => {
       expect(msgs[0].role).toBe('user');
       expect(msgs[1].role).toBe('assistant');
     });
+
+    it('setConversationMessages restores session', () => {
+      const restored = [
+        { role: 'user', content: 'previous' },
+        { role: 'assistant', content: 'context' },
+      ];
+      setConversationMessages(restored);
+      expect(getConversationLength()).toBe(2);
+      expect(getConversationMessages()).toEqual(restored);
+    });
   });
 
   // ─── processInput ─────────────────────────────────────────
@@ -83,6 +101,13 @@ describe('agent.js', () => {
       mockStreamResponse('Hello there!');
       await processInput('Hi');
       expect(getConversationLength()).toBe(2); // user + assistant
+    });
+
+    it('auto-saves after response', async () => {
+      const { autoSave } = require('../cli/session');
+      mockStreamResponse('Saved!');
+      await processInput('test');
+      expect(autoSave).toHaveBeenCalled();
     });
 
     it('handles tool call and result', async () => {

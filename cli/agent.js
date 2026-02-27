@@ -9,6 +9,8 @@ const { parseToolArgs } = require('./ollama');
 const { TOOL_DEFINITIONS, executeTool } = require('./tools');
 const { gatherProjectContext } = require('./context');
 const { fitToContext, getUsage } = require('./context-engine');
+const { autoSave } = require('./session');
+const { getMemoryContext } = require('./memory');
 
 const MAX_ITERATIONS = 30;
 const CWD = process.cwd();
@@ -19,6 +21,8 @@ let conversationMessages = [];
 function buildSystemPrompt() {
   const projectContext = gatherProjectContext(CWD);
 
+  const memoryContext = getMemoryContext();
+
   return `You are Jarvis Code, an expert coding assistant. You help with programming tasks by reading, writing, and editing files, running commands, and answering questions.
 
 WORKING DIRECTORY: ${CWD}
@@ -26,7 +30,7 @@ All relative paths resolve from this directory.
 
 PROJECT CONTEXT:
 ${projectContext}
-
+${memoryContext ? `\n${memoryContext}\n` : ''}
 BEHAVIOR:
 - You can use tools OR just respond with text — decide based on what's needed.
 - For simple questions, answer directly without tools.
@@ -51,6 +55,10 @@ function getConversationLength() {
 
 function getConversationMessages() {
   return conversationMessages;
+}
+
+function setConversationMessages(messages) {
+  conversationMessages = messages;
 }
 
 /**
@@ -123,6 +131,7 @@ async function processInput(userInput) {
 
     // No tool calls → response complete
     if (!tool_calls || tool_calls.length === 0) {
+      autoSave(conversationMessages);
       return;
     }
 
@@ -157,7 +166,8 @@ async function processInput(userInput) {
     }
   }
 
+  autoSave(conversationMessages);
   console.log(`\n${C.yellow}⚠ Max iterations (${MAX_ITERATIONS}) reached.${C.reset}`);
 }
 
-module.exports = { processInput, clearConversation, getConversationLength, getConversationMessages };
+module.exports = { processInput, clearConversation, getConversationLength, getConversationMessages, setConversationMessages };

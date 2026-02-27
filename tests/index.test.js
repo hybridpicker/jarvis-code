@@ -4,6 +4,7 @@ jest.mock('../cli/agent', () => ({
   clearConversation: jest.fn(),
   getConversationLength: jest.fn().mockReturnValue(0),
   getConversationMessages: jest.fn().mockReturnValue([]),
+  setConversationMessages: jest.fn(),
 }));
 
 jest.mock('../cli/ollama', () => ({
@@ -59,6 +60,19 @@ jest.mock('../cli/tools', () => ({
   TOOL_DEFINITIONS: [],
 }));
 
+jest.mock('../cli/session', () => ({
+  saveSession: jest.fn().mockReturnValue({ path: '/tmp/test.json', name: 'test' }),
+  loadSession: jest.fn().mockReturnValue(null),
+  listSessions: jest.fn().mockReturnValue([]),
+  getLastSession: jest.fn().mockReturnValue(null),
+}));
+
+jest.mock('../cli/memory', () => ({
+  remember: jest.fn(),
+  forget: jest.fn().mockReturnValue(false),
+  listMemories: jest.fn().mockReturnValue([]),
+}));
+
 describe('index.js (REPL commands)', () => {
   let logSpy, writeSpy, exitSpy;
 
@@ -86,6 +100,7 @@ describe('index.js (REPL commands)', () => {
         clearConversation: jest.fn(),
         getConversationLength: jest.fn().mockReturnValue(0),
         getConversationMessages: jest.fn().mockReturnValue([]),
+        setConversationMessages: jest.fn(),
       }));
       jest.mock('../cli/context-engine', () => ({
         getUsage: jest.fn().mockReturnValue({
@@ -95,6 +110,17 @@ describe('index.js (REPL commands)', () => {
         }),
       }));
       jest.mock('../cli/tools', () => ({ TOOL_DEFINITIONS: [] }));
+      jest.mock('../cli/session', () => ({
+        saveSession: jest.fn().mockReturnValue({ path: '/tmp/test.json', name: 'test' }),
+        loadSession: jest.fn().mockReturnValue(null),
+        listSessions: jest.fn().mockReturnValue([]),
+        getLastSession: jest.fn().mockReturnValue(null),
+      }));
+      jest.mock('../cli/memory', () => ({
+        remember: jest.fn(),
+        forget: jest.fn().mockReturnValue(false),
+        listMemories: jest.fn().mockReturnValue([]),
+      }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
         setActiveModel: jest.fn(),
@@ -130,6 +156,7 @@ describe('index.js (REPL commands)', () => {
         clearConversation: jest.fn(),
         getConversationLength: jest.fn().mockReturnValue(0),
         getConversationMessages: jest.fn().mockReturnValue([]),
+        setConversationMessages: jest.fn(),
       }));
       jest.mock('../cli/context-engine', () => ({
         getUsage: jest.fn().mockReturnValue({
@@ -139,6 +166,17 @@ describe('index.js (REPL commands)', () => {
         }),
       }));
       jest.mock('../cli/tools', () => ({ TOOL_DEFINITIONS: [] }));
+      jest.mock('../cli/session', () => ({
+        saveSession: jest.fn().mockReturnValue({ path: '/tmp/test.json', name: 'test' }),
+        loadSession: jest.fn().mockReturnValue(null),
+        listSessions: jest.fn().mockReturnValue([]),
+        getLastSession: jest.fn().mockReturnValue(null),
+      }));
+      jest.mock('../cli/memory', () => ({
+        remember: jest.fn(),
+        forget: jest.fn().mockReturnValue(false),
+        listMemories: jest.fn().mockReturnValue([]),
+      }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
         setActiveModel: jest.fn(),
@@ -196,7 +234,11 @@ describe('index.js (REPL commands)', () => {
         processInput: jest.fn().mockResolvedValue(undefined),
         clearConversation: jest.fn(),
         getConversationLength: jest.fn().mockReturnValue(0),
-        getConversationMessages: jest.fn().mockReturnValue([]),
+        getConversationMessages: jest.fn().mockReturnValue([
+          { role: 'user', content: 'test' },
+          { role: 'assistant', content: 'reply' },
+        ]),
+        setConversationMessages: jest.fn(),
       }));
       jest.mock('../cli/context-engine', () => ({
         getUsage: jest.fn().mockReturnValue({
@@ -206,6 +248,25 @@ describe('index.js (REPL commands)', () => {
         }),
       }));
       jest.mock('../cli/tools', () => ({ TOOL_DEFINITIONS: [] }));
+      jest.mock('../cli/session', () => ({
+        saveSession: jest.fn().mockReturnValue({ path: '/tmp/test.json', name: 'test' }),
+        loadSession: jest.fn().mockImplementation((name) => {
+          if (name === 'my-session') return { name: 'my-session', messageCount: 3, messages: [{ role: 'user', content: 'hi' }] };
+          return null;
+        }),
+        listSessions: jest.fn().mockReturnValue([
+          { name: 'session-1', updatedAt: '2025-06-01T00:00:00Z', messageCount: 5 },
+          { name: '_autosave', updatedAt: '2025-06-02T00:00:00Z', messageCount: 8 },
+        ]),
+        getLastSession: jest.fn().mockReturnValue({ name: '_autosave', messageCount: 8, messages: [{ role: 'user', content: 'last' }] }),
+      }));
+      jest.mock('../cli/memory', () => ({
+        remember: jest.fn(),
+        forget: jest.fn().mockImplementation((key) => key === 'existing-key'),
+        listMemories: jest.fn().mockReturnValue([
+          { key: 'lang', value: 'TypeScript', updatedAt: '2025-06-01T00:00:00Z' },
+        ]),
+      }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
         setActiveModel: jest.fn().mockImplementation((name) => name === 'qwen3-coder' || name === 'openai:gpt-4o'),
@@ -354,6 +415,115 @@ describe('index.js (REPL commands)', () => {
     it('handles readline close', () => {
       closeHandler();
       expect(exitSpy).toHaveBeenCalledWith(0);
+    });
+
+    // ─── Session commands ───────────────────────────────
+    it('handles /save command', async () => {
+      const { saveSession } = require('../cli/session');
+      await lineHandler('/save my-backup');
+      expect(saveSession).toHaveBeenCalledWith(
+        'my-backup',
+        expect.any(Array),
+        expect.objectContaining({ model: 'kimi-k2.5', provider: 'ollama' })
+      );
+    });
+
+    it('handles /save without name (generates timestamp)', async () => {
+      const { saveSession } = require('../cli/session');
+      await lineHandler('/save');
+      expect(saveSession).toHaveBeenCalled();
+      const name = saveSession.mock.calls[0][0];
+      expect(name).toMatch(/^session-\d+$/);
+    });
+
+    it('handles /save with empty conversation', async () => {
+      // Override getConversationMessages to return empty
+      const agent = require('../cli/agent');
+      agent.getConversationMessages.mockReturnValueOnce([]);
+      await lineHandler('/save test');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No conversation');
+    });
+
+    it('handles /load with valid session', async () => {
+      const { setConversationMessages } = require('../cli/agent');
+      await lineHandler('/load my-session');
+      expect(setConversationMessages).toHaveBeenCalled();
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Loaded session');
+    });
+
+    it('handles /load with non-existent session', async () => {
+      await lineHandler('/load nonexistent');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Session not found');
+    });
+
+    it('handles /load without name', async () => {
+      await lineHandler('/load');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Usage');
+    });
+
+    it('handles /sessions command', async () => {
+      await lineHandler('/sessions');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('session-1');
+      expect(output).toContain('_autosave');
+    });
+
+    it('handles /resume command', async () => {
+      const { setConversationMessages } = require('../cli/agent');
+      await lineHandler('/resume');
+      expect(setConversationMessages).toHaveBeenCalled();
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Resumed');
+    });
+
+    // ─── Memory commands ────────────────────────────────
+    it('handles /remember with key=value', async () => {
+      const { remember } = require('../cli/memory');
+      await lineHandler('/remember lang=TypeScript');
+      expect(remember).toHaveBeenCalledWith('lang', 'TypeScript');
+    });
+
+    it('handles /remember with freeform text', async () => {
+      const { remember } = require('../cli/memory');
+      await lineHandler('/remember always use yarn');
+      expect(remember).toHaveBeenCalled();
+      const [key, value] = remember.mock.calls[0];
+      expect(value).toBe('always use yarn');
+    });
+
+    it('handles /remember without text', async () => {
+      await lineHandler('/remember');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Usage');
+    });
+
+    it('handles /forget with existing key', async () => {
+      await lineHandler('/forget existing-key');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Forgotten');
+    });
+
+    it('handles /forget with non-existent key', async () => {
+      await lineHandler('/forget nope');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('not found');
+    });
+
+    it('handles /forget without key', async () => {
+      await lineHandler('/forget');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Usage');
+    });
+
+    it('handles /memory command', async () => {
+      await lineHandler('/memory');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('lang');
+      expect(output).toContain('TypeScript');
     });
   });
 });
