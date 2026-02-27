@@ -45,6 +45,15 @@ jest.mock('../cli/render', () => ({
   renderMarkdown: jest.fn().mockImplementation((text) => text || ''),
 }));
 
+jest.mock('../cli/hooks', () => ({
+  runHooks: jest.fn().mockReturnValue([]),
+}));
+
+jest.mock('../cli/mcp', () => ({
+  routeMCPCall: jest.fn().mockResolvedValue(null),
+  getMCPToolDefinitions: jest.fn().mockReturnValue([]),
+}));
+
 jest.mock('../cli/safety', () => ({
   isForbidden: jest.fn().mockReturnValue(null),
   isDangerous: jest.fn().mockReturnValue(false),

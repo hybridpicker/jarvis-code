@@ -15,6 +15,8 @@ const { checkPermission } = require('./permissions');
 const { confirm } = require('./safety');
 const { isPlanMode, getPlanModePrompt } = require('./planner');
 const { renderMarkdown } = require('./render');
+const { runHooks } = require('./hooks');
+const { routeMCPCall, getMCPToolDefinitions } = require('./mcp');
 
 const MAX_ITERATIONS = 30;
 const CWD = process.cwd();
@@ -97,7 +99,8 @@ async function processInput(userInput) {
 
     let result;
     try {
-      result = await callStream(apiMessages, TOOL_DEFINITIONS, {
+      const allTools = [...TOOL_DEFINITIONS, ...getMCPToolDefinitions()];
+      result = await callStream(apiMessages, allTools, {
         onToken: (text) => {
           if (firstToken) {
             spinner.stop();
@@ -178,14 +181,27 @@ async function processInput(userInput) {
         }
       }
 
-      // Execute (async for confirmation prompts)
-      const toolResult = await executeTool(fnName, args);
+      // Pre-tool hook
+      runHooks('pre-tool', { tool_name: fnName });
+
+      // Execute: MCP tools or built-in tools
+      let toolResult;
+      const mcpResult = await routeMCPCall(fnName, args);
+      if (mcpResult !== null) {
+        toolResult = mcpResult;
+      } else {
+        toolResult = await executeTool(fnName, args);
+      }
+
       const truncated =
         toolResult.length > 50000
           ? toolResult.substring(0, 50000) + `\n...(truncated ${toolResult.length - 50000} chars)`
           : toolResult;
 
       console.log(formatResult(truncated));
+
+      // Post-tool hook
+      runHooks('post-tool', { tool_name: fnName });
 
       const toolMsg = { role: 'tool', content: truncated, tool_call_id: callId };
       conversationMessages.push(toolMsg);

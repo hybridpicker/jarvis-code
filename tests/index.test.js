@@ -107,6 +107,18 @@ jest.mock('../cli/git', () => ({
   createBranch: jest.fn().mockReturnValue('feat/test-branch'),
 }));
 
+jest.mock('../cli/mcp', () => ({
+  listServers: jest.fn().mockReturnValue([]),
+  connectAll: jest.fn().mockResolvedValue([]),
+  disconnectAll: jest.fn(),
+}));
+
+jest.mock('../cli/hooks', () => ({
+  listHooks: jest.fn().mockReturnValue([]),
+  runHooks: jest.fn().mockReturnValue([]),
+  HOOK_EVENTS: ['pre-tool', 'post-tool', 'pre-commit', 'post-response', 'session-start', 'session-end'],
+}));
+
 describe('index.js (REPL commands)', () => {
   let logSpy, writeSpy, exitSpy;
 
@@ -177,6 +189,16 @@ describe('index.js (REPL commands)', () => {
         analyzeDiff: jest.fn().mockReturnValue(null),
         commit: jest.fn().mockReturnValue(null),
         createBranch: jest.fn().mockReturnValue('feat/test-branch'),
+      }));
+      jest.mock('../cli/mcp', () => ({
+        listServers: jest.fn().mockReturnValue([]),
+        connectAll: jest.fn().mockResolvedValue([]),
+        disconnectAll: jest.fn(),
+      }));
+      jest.mock('../cli/hooks', () => ({
+        listHooks: jest.fn().mockReturnValue([]),
+        runHooks: jest.fn().mockReturnValue([]),
+        HOOK_EVENTS: ['pre-tool', 'post-tool', 'pre-commit', 'post-response', 'session-start', 'session-end'],
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
@@ -256,6 +278,16 @@ describe('index.js (REPL commands)', () => {
         analyzeDiff: jest.fn().mockReturnValue(null),
         commit: jest.fn().mockReturnValue(null),
         createBranch: jest.fn().mockReturnValue('feat/test-branch'),
+      }));
+      jest.mock('../cli/mcp', () => ({
+        listServers: jest.fn().mockReturnValue([]),
+        connectAll: jest.fn().mockResolvedValue([]),
+        disconnectAll: jest.fn(),
+      }));
+      jest.mock('../cli/hooks', () => ({
+        listHooks: jest.fn().mockReturnValue([]),
+        runHooks: jest.fn().mockReturnValue([]),
+        HOOK_EVENTS: ['pre-tool', 'post-tool', 'pre-commit', 'post-response', 'session-start', 'session-end'],
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -372,6 +404,16 @@ describe('index.js (REPL commands)', () => {
         analyzeDiff: jest.fn().mockReturnValue(null),
         commit: jest.fn().mockReturnValue(null),
         createBranch: jest.fn().mockReturnValue('feat/test-branch'),
+      }));
+      jest.mock('../cli/mcp', () => ({
+        listServers: jest.fn().mockReturnValue([]),
+        connectAll: jest.fn().mockResolvedValue([]),
+        disconnectAll: jest.fn(),
+      }));
+      jest.mock('../cli/hooks', () => ({
+        listHooks: jest.fn().mockReturnValue([]),
+        runHooks: jest.fn().mockReturnValue([]),
+        HOOK_EVENTS: ['pre-tool', 'post-tool', 'pre-commit', 'post-response', 'session-start', 'session-end'],
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -749,6 +791,26 @@ describe('index.js (REPL commands)', () => {
       commit.mockReturnValueOnce('abc1234');
       await lineHandler('/commit fix: bug fix');
       expect(commit).toHaveBeenCalledWith('fix: bug fix');
+    });
+
+    // ─── MCP commands ──────────────────────────────────
+    it('handles /mcp command (no servers)', async () => {
+      await lineHandler('/mcp');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No MCP servers configured');
+    });
+
+    it('handles /mcp disconnect', async () => {
+      const { disconnectAll } = require('../cli/mcp');
+      await lineHandler('/mcp disconnect');
+      expect(disconnectAll).toHaveBeenCalled();
+    });
+
+    // ─── Hooks commands ────────────────────────────────
+    it('handles /hooks command (no hooks)', async () => {
+      await lineHandler('/hooks');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No hooks configured');
     });
   });
 });

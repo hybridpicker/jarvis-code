@@ -20,6 +20,8 @@ const {
   setAutonomyLevel, getAutonomyLevel, AUTONOMY_LEVELS,
 } = require('./planner');
 const { isGitRepo, getCurrentBranch, formatDiffSummary, analyzeDiff, commit, createBranch } = require('./git');
+const { listServers, connectAll, disconnectAll } = require('./mcp');
+const { listHooks, runHooks, HOOK_EVENTS } = require('./hooks');
 
 const CWD = process.cwd();
 
@@ -61,6 +63,11 @@ ${C.bold}${C.white}Git:${C.reset}
   ${C.cyan}/commit [msg]${C.reset}    ${C.dim}Smart commit (analyze diff, suggest message)${C.reset}
   ${C.cyan}/diff${C.reset}             ${C.dim}Show current diff summary${C.reset}
   ${C.cyan}/branch [name]${C.reset}   ${C.dim}Create feature branch${C.reset}
+
+${C.bold}${C.white}Extensibility:${C.reset}
+  ${C.cyan}/mcp${C.reset}              ${C.dim}Show MCP servers and tools${C.reset}
+  ${C.cyan}/mcp connect${C.reset}      ${C.dim}Connect all configured MCP servers${C.reset}
+  ${C.cyan}/hooks${C.reset}            ${C.dim}Show configured hooks${C.reset}
 
   ${C.cyan}/exit${C.reset}             ${C.dim}Quit${C.reset}
 `);
@@ -423,6 +430,63 @@ function handleSlashCommand(input) {
       } else {
         console.log(`${C.red}Failed to create branch${C.reset}`);
       }
+      return true;
+    }
+
+    case '/mcp': {
+      const mcpArg = rest.join(' ').trim();
+      if (mcpArg === 'connect') {
+        console.log(`${C.dim}Connecting MCP servers...${C.reset}`);
+        connectAll().then((results) => {
+          for (const r of results) {
+            if (r.error) {
+              console.log(`  ${C.red}✗${C.reset} ${r.name}: ${r.error}`);
+            } else {
+              console.log(`  ${C.green}✓${C.reset} ${r.name}: ${r.tools} tools`);
+            }
+          }
+          if (results.length === 0) {
+            console.log(`${C.dim}No MCP servers configured in .jarvis/config.json${C.reset}`);
+          }
+        });
+        return true;
+      }
+      if (mcpArg === 'disconnect') {
+        disconnectAll();
+        console.log(`${C.green}All MCP servers disconnected${C.reset}`);
+        return true;
+      }
+      // Show status
+      const servers = listServers();
+      if (servers.length === 0) {
+        console.log(`${C.dim}No MCP servers configured${C.reset}`);
+        console.log(`${C.dim}Add servers to .jarvis/config.json under "mcpServers"${C.reset}`);
+        return true;
+      }
+      console.log(`\n${C.bold}${C.white}MCP Servers:${C.reset}`);
+      for (const s of servers) {
+        const status = s.connected ? `${C.green}✓ connected${C.reset}` : `${C.dim}○ disconnected${C.reset}`;
+        console.log(`  ${status} ${C.bold}${s.name}${C.reset} (${s.command}) — ${s.toolCount} tools`);
+      }
+      console.log(`\n${C.dim}Use /mcp connect to connect all servers${C.reset}\n`);
+      return true;
+    }
+
+    case '/hooks': {
+      const hookList = listHooks();
+      if (hookList.length === 0) {
+        console.log(`${C.dim}No hooks configured${C.reset}`);
+        console.log(`${C.dim}Add hooks to .jarvis/config.json or .jarvis/hooks/${C.reset}`);
+        return true;
+      }
+      console.log(`\n${C.bold}${C.white}Hooks:${C.reset}`);
+      for (const h of hookList) {
+        console.log(`  ${C.cyan}${h.event}${C.reset}`);
+        for (const cmd of h.commands) {
+          console.log(`    ${C.dim}→ ${cmd}${C.reset}`);
+        }
+      }
+      console.log();
       return true;
     }
 
