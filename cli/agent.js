@@ -14,6 +14,7 @@ const { getMemoryContext } = require('./memory');
 const { checkPermission } = require('./permissions');
 const { confirm } = require('./safety');
 const { isPlanMode, getPlanModePrompt } = require('./planner');
+const { renderMarkdown } = require('./render');
 
 const MAX_ITERATIONS = 30;
 const CWD = process.cwd();
@@ -92,6 +93,7 @@ async function processInput(userInput) {
     const spinner = new Spinner('Connecting...');
     spinner.start();
     let firstToken = true;
+    let streamedText = '';
 
     let result;
     try {
@@ -99,10 +101,9 @@ async function processInput(userInput) {
         onToken: (text) => {
           if (firstToken) {
             spinner.stop();
-            process.stdout.write(`${C.blue}`);
             firstToken = false;
           }
-          process.stdout.write(text);
+          streamedText += text;
         },
       });
     } catch (err) {
@@ -119,8 +120,11 @@ async function processInput(userInput) {
 
     if (firstToken) {
       spinner.stop();
-    } else {
-      process.stdout.write(`${C.reset}\n`);
+    }
+
+    // Render streamed text with markdown formatting
+    if (streamedText) {
+      console.log(renderMarkdown(streamedText));
     }
 
     const { content, tool_calls } = result;

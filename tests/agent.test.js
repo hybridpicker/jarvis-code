@@ -41,6 +41,10 @@ jest.mock('../cli/planner', () => ({
   getPlanModePrompt: jest.fn().mockReturnValue(''),
 }));
 
+jest.mock('../cli/render', () => ({
+  renderMarkdown: jest.fn().mockImplementation((text) => text || ''),
+}));
+
 jest.mock('../cli/safety', () => ({
   isForbidden: jest.fn().mockReturnValue(null),
   isDangerous: jest.fn().mockReturnValue(false),

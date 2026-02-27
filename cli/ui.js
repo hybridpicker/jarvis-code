@@ -1,5 +1,6 @@
 /**
  * cli/ui.js — ANSI Colors, Spinner, Formatting
+ * Rich terminal output with markdown rendering support
  */
 
 const C = {
@@ -60,7 +61,7 @@ function banner(modelName, cwd) {
 
   console.log(`
 ${C.dim}${top}
-${line(` ${C.reset}${C.cyan}✻${C.reset}${C.bold}${C.white} Jarvis Code ${C.reset}${C.dim}v2.1${C.reset}${C.dim}`)}
+${line(` ${C.reset}${C.cyan}✻${C.reset}${C.bold}${C.white} Jarvis Code ${C.reset}${C.dim}v2.7${C.reset}${C.dim}`)}
 ${line(`   ${C.reset}${C.dim}Agentic Coding CLI${C.reset}${C.dim}`)}
 ${line('')}
 ${line(`   ${C.reset}${C.dim}Model: ${modelName}${C.reset}${C.dim}`)}
