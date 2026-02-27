@@ -14,6 +14,11 @@ const { TOOL_DEFINITIONS } = require('./tools');
 const { saveSession, loadSession, listSessions, getLastSession } = require('./session');
 const { remember, forget, listMemories } = require('./memory');
 const { listPermissions, setPermission, savePermissions } = require('./permissions');
+const {
+  createPlan, getActivePlan, setPlanMode, isPlanMode,
+  approvePlan, startExecution, formatPlan, savePlan, listPlans, clearPlan,
+  setAutonomyLevel, getAutonomyLevel, AUTONOMY_LEVELS,
+} = require('./planner');
 
 const CWD = process.cwd();
 
@@ -43,6 +48,13 @@ ${C.bold}${C.white}Permissions:${C.reset}
   ${C.cyan}/permissions${C.reset}      ${C.dim}Show tool permissions${C.reset}
   ${C.cyan}/allow <tool>${C.reset}     ${C.dim}Auto-allow a tool${C.reset}
   ${C.cyan}/deny <tool>${C.reset}      ${C.dim}Block a tool${C.reset}
+
+${C.bold}${C.white}Planning:${C.reset}
+  ${C.cyan}/plan [task]${C.reset}      ${C.dim}Enter plan mode (analyze, don't execute)${C.reset}
+  ${C.cyan}/plan status${C.reset}      ${C.dim}Show current plan progress${C.reset}
+  ${C.cyan}/plan approve${C.reset}     ${C.dim}Approve current plan${C.reset}
+  ${C.cyan}/plans${C.reset}            ${C.dim}List saved plans${C.reset}
+  ${C.cyan}/auto [level]${C.reset}     ${C.dim}Set autonomy: interactive/semi-auto/autonomous${C.reset}
 
   ${C.cyan}/exit${C.reset}             ${C.dim}Quit${C.reset}
 `);
@@ -258,6 +270,63 @@ function handleSlashCommand(input) {
         console.log(`  ${C.cyan}${m.key}${C.reset} = ${m.value}`);
       }
       console.log();
+      return true;
+    }
+
+    case '/plan': {
+      const arg = rest.join(' ').trim();
+      if (arg === 'status') {
+        const plan = getActivePlan();
+        console.log(formatPlan(plan));
+        return true;
+      }
+      if (arg === 'approve') {
+        if (approvePlan()) {
+          console.log(`${C.green}Plan approved! Starting execution...${C.reset}`);
+          startExecution();
+          setPlanMode(false);
+        } else {
+          console.log(`${C.red}No plan to approve${C.reset}`);
+        }
+        return true;
+      }
+      // Enter plan mode
+      setPlanMode(true);
+      console.log(`${C.cyan}${C.bold}Plan mode activated${C.reset}`);
+      console.log(`${C.dim}Analysis only — no file changes until approved${C.reset}`);
+      if (arg) {
+        console.log(`${C.dim}Task: ${arg}${C.reset}`);
+      }
+      return true;
+    }
+
+    case '/plans': {
+      const plans = listPlans();
+      if (plans.length === 0) {
+        console.log(`${C.dim}No saved plans${C.reset}`);
+        return true;
+      }
+      console.log(`\n${C.bold}${C.white}Plans:${C.reset}`);
+      for (const p of plans) {
+        const statusIcon = p.status === 'completed' ? `${C.green}✓` : p.status === 'executing' ? `${C.blue}→` : `${C.dim}○`;
+        console.log(`  ${statusIcon} ${C.reset}${C.bold}${p.name}${C.reset} — ${p.task || '?'} (${p.steps} steps, ${p.status})`);
+      }
+      console.log();
+      return true;
+    }
+
+    case '/auto': {
+      const level = rest.join(' ').trim();
+      if (!level) {
+        console.log(`${C.bold}${C.white}Autonomy:${C.reset} ${getAutonomyLevel()}`);
+        console.log(`${C.dim}Levels: ${AUTONOMY_LEVELS.join(', ')}${C.reset}`);
+        return true;
+      }
+      if (setAutonomyLevel(level)) {
+        console.log(`${C.green}Autonomy: ${level}${C.reset}`);
+      } else {
+        console.log(`${C.red}Unknown level: ${level}. Use: ${AUTONOMY_LEVELS.join(', ')}${C.reset}`);
+      }
       return true;
     }
 

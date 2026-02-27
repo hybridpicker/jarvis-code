@@ -36,6 +36,11 @@ jest.mock('../cli/permissions', () => ({
   checkPermission: jest.fn().mockReturnValue('allow'),
 }));
 
+jest.mock('../cli/planner', () => ({
+  isPlanMode: jest.fn().mockReturnValue(false),
+  getPlanModePrompt: jest.fn().mockReturnValue(''),
+}));
+
 jest.mock('../cli/safety', () => ({
   isForbidden: jest.fn().mockReturnValue(null),
   isDangerous: jest.fn().mockReturnValue(false),

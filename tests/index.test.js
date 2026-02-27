@@ -82,6 +82,22 @@ jest.mock('../cli/permissions', () => ({
   savePermissions: jest.fn(),
 }));
 
+jest.mock('../cli/planner', () => ({
+  createPlan: jest.fn(),
+  getActivePlan: jest.fn().mockReturnValue(null),
+  setPlanMode: jest.fn(),
+  isPlanMode: jest.fn().mockReturnValue(false),
+  approvePlan: jest.fn().mockReturnValue(false),
+  startExecution: jest.fn(),
+  formatPlan: jest.fn().mockReturnValue('No active plan'),
+  savePlan: jest.fn(),
+  listPlans: jest.fn().mockReturnValue([]),
+  clearPlan: jest.fn(),
+  setAutonomyLevel: jest.fn().mockReturnValue(true),
+  getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
+  AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
+}));
+
 describe('index.js (REPL commands)', () => {
   let logSpy, writeSpy, exitSpy;
 
@@ -134,6 +150,16 @@ describe('index.js (REPL commands)', () => {
         listPermissions: jest.fn().mockReturnValue([]),
         setPermission: jest.fn().mockReturnValue(true),
         savePermissions: jest.fn(),
+      }));
+      jest.mock('../cli/planner', () => ({
+        createPlan: jest.fn(), getActivePlan: jest.fn().mockReturnValue(null),
+        setPlanMode: jest.fn(), isPlanMode: jest.fn().mockReturnValue(false),
+        approvePlan: jest.fn().mockReturnValue(false), startExecution: jest.fn(),
+        formatPlan: jest.fn().mockReturnValue('No active plan'),
+        savePlan: jest.fn(), listPlans: jest.fn().mockReturnValue([]), clearPlan: jest.fn(),
+        setAutonomyLevel: jest.fn().mockReturnValue(true),
+        getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
+        AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
@@ -195,6 +221,16 @@ describe('index.js (REPL commands)', () => {
         listPermissions: jest.fn().mockReturnValue([]),
         setPermission: jest.fn().mockReturnValue(true),
         savePermissions: jest.fn(),
+      }));
+      jest.mock('../cli/planner', () => ({
+        createPlan: jest.fn(), getActivePlan: jest.fn().mockReturnValue(null),
+        setPlanMode: jest.fn(), isPlanMode: jest.fn().mockReturnValue(false),
+        approvePlan: jest.fn().mockReturnValue(false), startExecution: jest.fn(),
+        formatPlan: jest.fn().mockReturnValue('No active plan'),
+        savePlan: jest.fn(), listPlans: jest.fn().mockReturnValue([]), clearPlan: jest.fn(),
+        setAutonomyLevel: jest.fn().mockReturnValue(true),
+        getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
+        AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -293,6 +329,16 @@ describe('index.js (REPL commands)', () => {
         ]),
         setPermission: jest.fn().mockReturnValue(true),
         savePermissions: jest.fn(),
+      }));
+      jest.mock('../cli/planner', () => ({
+        createPlan: jest.fn(), getActivePlan: jest.fn().mockReturnValue(null),
+        setPlanMode: jest.fn(), isPlanMode: jest.fn().mockReturnValue(false),
+        approvePlan: jest.fn().mockReturnValue(false), startExecution: jest.fn(),
+        formatPlan: jest.fn().mockReturnValue('No active plan'),
+        savePlan: jest.fn(), listPlans: jest.fn().mockReturnValue([]), clearPlan: jest.fn(),
+        setAutonomyLevel: jest.fn().mockReturnValue(true),
+        getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
+        AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -585,6 +631,59 @@ describe('index.js (REPL commands)', () => {
       await lineHandler('/deny');
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Usage');
+    });
+
+    // ─── Plan commands ──────────────────────────────────
+    it('handles /plan command (enter plan mode)', async () => {
+      const { setPlanMode } = require('../cli/planner');
+      await lineHandler('/plan');
+      expect(setPlanMode).toHaveBeenCalledWith(true);
+    });
+
+    it('handles /plan with task description', async () => {
+      const { setPlanMode } = require('../cli/planner');
+      await lineHandler('/plan refactor auth module');
+      expect(setPlanMode).toHaveBeenCalledWith(true);
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Plan mode activated');
+    });
+
+    it('handles /plan status', async () => {
+      const { formatPlan } = require('../cli/planner');
+      await lineHandler('/plan status');
+      expect(formatPlan).toHaveBeenCalled();
+    });
+
+    it('handles /plan approve with no plan', async () => {
+      await lineHandler('/plan approve');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No plan');
+    });
+
+    it('handles /plans command', async () => {
+      await lineHandler('/plans');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No saved plans');
+    });
+
+    it('handles /auto without level', async () => {
+      await lineHandler('/auto');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('interactive');
+    });
+
+    it('handles /auto with valid level', async () => {
+      const { setAutonomyLevel } = require('../cli/planner');
+      await lineHandler('/auto semi-auto');
+      expect(setAutonomyLevel).toHaveBeenCalledWith('semi-auto');
+    });
+
+    it('handles /auto with invalid level', async () => {
+      const { setAutonomyLevel } = require('../cli/planner');
+      setAutonomyLevel.mockReturnValueOnce(false);
+      await lineHandler('/auto invalid');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Unknown level');
     });
   });
 });

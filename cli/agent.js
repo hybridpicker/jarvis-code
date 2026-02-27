@@ -13,6 +13,7 @@ const { autoSave } = require('./session');
 const { getMemoryContext } = require('./memory');
 const { checkPermission } = require('./permissions');
 const { confirm } = require('./safety');
+const { isPlanMode, getPlanModePrompt } = require('./planner');
 
 const MAX_ITERATIONS = 30;
 const CWD = process.cwd();
@@ -24,6 +25,7 @@ function buildSystemPrompt() {
   const projectContext = gatherProjectContext(CWD);
 
   const memoryContext = getMemoryContext();
+  const planPrompt = isPlanMode() ? getPlanModePrompt() : '';
 
   return `You are Jarvis Code, an expert coding assistant. You help with programming tasks by reading, writing, and editing files, running commands, and answering questions.
 
@@ -32,7 +34,7 @@ All relative paths resolve from this directory.
 
 PROJECT CONTEXT:
 ${projectContext}
-${memoryContext ? `\n${memoryContext}\n` : ''}
+${memoryContext ? `\n${memoryContext}\n` : ''}${planPrompt ? `\n${planPrompt}\n` : ''}
 BEHAVIOR:
 - You can use tools OR just respond with text — decide based on what's needed.
 - For simple questions, answer directly without tools.
