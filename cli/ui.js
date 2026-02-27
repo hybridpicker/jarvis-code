@@ -6,6 +6,7 @@ const C = {
   reset: '\x1b[0m',
   bold: '\x1b[1m',
   dim: '\x1b[2m',
+  white: '\x1b[37m',
   red: '\x1b[31m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
@@ -47,12 +48,24 @@ class Spinner {
   }
 }
 
-function banner() {
+function banner(modelName, cwd) {
+  const width = 44;
+  const top = `╭${'─'.repeat(width)}╮`;
+  const bot = `╰${'─'.repeat(width)}╯`;
+  const pad = (s) => {
+    const visible = s.replace(/\x1b\[[0-9;]*m/g, '');
+    return s + ' '.repeat(Math.max(0, width - visible.length));
+  };
+  const line = (s) => `│${pad(s)}│`;
+
   console.log(`
-${C.cyan}${C.bold}╔══════════════════════════════════════════╗
-║         Jarvis Code  v2.0                ║
-║         Agentic Coding CLI               ║
-╚══════════════════════════════════════════╝${C.reset}`);
+${C.dim}${top}
+${line(` ${C.reset}${C.cyan}✻${C.reset}${C.bold}${C.white} Jarvis Code ${C.reset}${C.dim}v2.1${C.reset}${C.dim}`)}
+${line(`   ${C.reset}${C.dim}Agentic Coding CLI${C.reset}${C.dim}`)}
+${line('')}
+${line(`   ${C.reset}${C.dim}Model: ${modelName}${C.reset}${C.dim}`)}
+${line(`   ${C.reset}${C.dim}/help for commands${C.reset}${C.dim}`)}
+${bot}${C.reset}`);
 }
 
 function formatToolCall(name, args) {

@@ -1,7 +1,7 @@
 {
   "name": "jarvis-code",
-  "version": "2.0.0",
-  "description": "Jarvis Code — Agentic Coding CLI powered by Ollama Cloud",
+  "version": "2.1.0",
+  "description": "Jarvis Code — Agentic Coding CLI with Multi-Provider Support",
   "bin": {
     "jarvis-code": "./bin/jarvis-code.js"
   },
@@ -15,7 +15,10 @@
     "cli",
     "coding",
     "agent",
-    "ollama"
+    "ollama",
+    "openai",
+    "anthropic",
+    "multi-provider"
   ],
   "license": "MIT",
   "dependencies": {

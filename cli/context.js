@@ -59,20 +59,19 @@ function gatherProjectContext(cwd) {
 }
 
 function printContext(cwd) {
-  console.log(`\n${C.cyan}${C.bold}Project Context:${C.reset}`);
-  console.log(`${C.gray}${'─'.repeat(50)}${C.reset}`);
-
   const pkgPath = path.join(cwd, 'package.json');
+  let project = '';
   if (fs.existsSync(pkgPath)) {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    console.log(`${C.bold}  Project:${C.reset} ${pkg.name || '?'} v${pkg.version || '?'}`);
+    project = `${pkg.name || '?'} v${pkg.version || '?'}`;
   }
 
   const branch = safe(() => execSync('git branch --show-current', { cwd, encoding: 'utf-8' }).trim());
-  if (branch) console.log(`${C.bold}  Branch:${C.reset}  ${branch}`);
 
-  console.log(`${C.bold}  CWD:${C.reset}     ${cwd}`);
-  console.log(`${C.gray}${'─'.repeat(50)}${C.reset}\n`);
+  console.log(`${C.dim}  cwd: ${cwd}${C.reset}`);
+  if (project) console.log(`${C.dim}  project: ${project}${C.reset}`);
+  if (branch) console.log(`${C.dim}  branch: ${branch}${C.reset}`);
+  console.log();
 }
 
 module.exports = { gatherProjectContext, printContext };

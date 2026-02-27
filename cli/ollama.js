@@ -1,43 +1,32 @@
 /**
- * cli/ollama.js — Ollama API Client with Streaming
+ * cli/ollama.js — Ollama API Client (Backward-compatible wrapper)
+ *
+ * This module now delegates to the provider system (cli/providers/).
+ * Exports the same API for backward compatibility.
  */
 
-const axios = require('axios');
-const { C, Spinner } = require('./ui');
-
-const OLLAMA_BASE = 'https://ollama.com';
+const registry = require('./providers/registry');
 
 const MODELS = {
   'kimi-k2.5': { id: 'kimi-k2.5', name: 'Kimi K2.5', max_tokens: 16384 },
   'qwen3-coder': { id: 'qwen3-coder', name: 'Qwen3 Coder', max_tokens: 16384 },
 };
 
-let activeModel = MODELS['kimi-k2.5'];
-
 function getActiveModel() {
-  return activeModel;
+  return registry.getActiveModel();
 }
 
 function setActiveModel(name) {
-  if (MODELS[name]) {
-    activeModel = MODELS[name];
-    return true;
-  }
-  return false;
+  return registry.setActiveModel(name);
 }
 
 function getModelNames() {
-  return Object.keys(MODELS);
-}
-
-function getHeaders() {
-  const key = process.env.OLLAMA_API_KEY;
-  if (!key) throw new Error('OLLAMA_API_KEY not set');
-  return { Authorization: `Bearer ${key}` };
+  return registry.getModelNames();
 }
 
 /**
- * Parse tool call arguments with fallback strategies
+ * Parse tool call arguments with fallback strategies.
+ * This is a utility function, not provider-specific.
  */
 function parseToolArgs(raw) {
   if (!raw) return null;
@@ -65,127 +54,50 @@ function parseToolArgs(raw) {
 }
 
 /**
- * Call Ollama API with streaming.
- * Streams text tokens to stdout in real-time.
- * Collects and returns tool_calls when done.
- *
- * Returns: { content: string, tool_calls: Array }
+ * @deprecated Use providers/registry.callStream() instead.
+ * Streaming call through the active provider.
  */
 async function callOllamaStream(messages, tools) {
+  const { C } = require('./ui');
+  const { Spinner } = require('./ui');
+
   const spinner = new Spinner('Connecting...');
   spinner.start();
+  let firstToken = true;
+  let contentStr = '';
 
-  let response;
   try {
-    response = await axios.post(
-      `${OLLAMA_BASE}/api/chat`,
-      {
-        model: activeModel.id,
-        messages,
-        tools,
-        stream: true,
-        options: { temperature: 0.2, num_predict: activeModel.max_tokens },
+    const result = await registry.callStream(messages, tools, {
+      onToken: (text) => {
+        if (firstToken) {
+          spinner.stop();
+          process.stdout.write(`${C.blue}`);
+          firstToken = false;
+        }
+        process.stdout.write(text);
+        contentStr += text;
       },
-      {
-        timeout: 180000,
-        headers: getHeaders(),
-        responseType: 'stream',
-      }
-    );
+    });
+
+    if (firstToken) {
+      spinner.stop();
+    } else {
+      process.stdout.write(`${C.reset}\n`);
+    }
+
+    return result;
   } catch (err) {
     spinner.stop();
-    const msg = err.response?.data?.error || err.message;
-    throw new Error(`API Error: ${msg}`);
+    throw err;
   }
-
-  spinner.stop();
-
-  return new Promise((resolve, reject) => {
-    let content = '';
-    let toolCalls = [];
-    let buffer = '';
-    let firstToken = true;
-
-    response.data.on('data', (chunk) => {
-      buffer += chunk.toString();
-
-      // Process complete NDJSON lines
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let parsed;
-        try {
-          parsed = JSON.parse(line);
-        } catch {
-          continue;
-        }
-
-        // Stream text tokens
-        if (parsed.message?.content) {
-          if (firstToken) {
-            process.stdout.write(`${C.blue}`);
-            firstToken = false;
-          }
-          process.stdout.write(parsed.message.content);
-          content += parsed.message.content;
-        }
-
-        // Collect tool calls
-        if (parsed.message?.tool_calls) {
-          toolCalls = toolCalls.concat(parsed.message.tool_calls);
-        }
-
-        // Done
-        if (parsed.done) {
-          if (!firstToken) {
-            process.stdout.write(`${C.reset}\n`);
-          }
-          resolve({ content, tool_calls: toolCalls });
-          return;
-        }
-      }
-    });
-
-    response.data.on('error', (err) => {
-      if (!firstToken) process.stdout.write(`${C.reset}\n`);
-      reject(new Error(`Stream error: ${err.message}`));
-    });
-
-    response.data.on('end', () => {
-      // Process remaining buffer
-      if (buffer.trim()) {
-        try {
-          const parsed = JSON.parse(buffer);
-          if (parsed.message?.content) content += parsed.message.content;
-          if (parsed.message?.tool_calls) toolCalls = toolCalls.concat(parsed.message.tool_calls);
-        } catch {
-          /* ignore */
-        }
-      }
-      if (!firstToken) process.stdout.write(`${C.reset}\n`);
-      resolve({ content, tool_calls: toolCalls });
-    });
-  });
 }
 
 /**
- * Non-streaming fallback (used if streaming fails)
+ * @deprecated Use providers/registry.callChat() instead.
+ * Non-streaming call through the active provider.
  */
 async function callOllama(messages, tools) {
-  const response = await axios.post(
-    `${OLLAMA_BASE}/api/chat`,
-    {
-      model: activeModel.id,
-      messages,
-      tools,
-      stream: false,
-      options: { temperature: 0.2, num_predict: activeModel.max_tokens },
-    },
-    { timeout: 120000, headers: getHeaders() }
-  );
-  return response.data;
+  return registry.callChat(messages, tools);
 }
 
 module.exports = {

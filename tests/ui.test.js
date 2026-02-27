@@ -76,7 +76,7 @@ describe('ui.js', () => {
       expect(logSpy).toHaveBeenCalled();
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Jarvis Code');
-      expect(output).toContain('v2.0');
+      expect(output).toContain('v2.1');
       logSpy.mockRestore();
     });
   });
