@@ -19,6 +19,7 @@ const {
   approvePlan, startExecution, formatPlan, savePlan, listPlans, clearPlan,
   setAutonomyLevel, getAutonomyLevel, AUTONOMY_LEVELS,
 } = require('./planner');
+const { isGitRepo, getCurrentBranch, formatDiffSummary, analyzeDiff, commit, createBranch } = require('./git');
 
 const CWD = process.cwd();
 
@@ -55,6 +56,11 @@ ${C.bold}${C.white}Planning:${C.reset}
   ${C.cyan}/plan approve${C.reset}     ${C.dim}Approve current plan${C.reset}
   ${C.cyan}/plans${C.reset}            ${C.dim}List saved plans${C.reset}
   ${C.cyan}/auto [level]${C.reset}     ${C.dim}Set autonomy: interactive/semi-auto/autonomous${C.reset}
+
+${C.bold}${C.white}Git:${C.reset}
+  ${C.cyan}/commit [msg]${C.reset}    ${C.dim}Smart commit (analyze diff, suggest message)${C.reset}
+  ${C.cyan}/diff${C.reset}             ${C.dim}Show current diff summary${C.reset}
+  ${C.cyan}/branch [name]${C.reset}   ${C.dim}Create feature branch${C.reset}
 
   ${C.cyan}/exit${C.reset}             ${C.dim}Quit${C.reset}
 `);
@@ -362,6 +368,61 @@ function handleSlashCommand(input) {
       setPermission(tool, 'deny');
       savePermissions();
       console.log(`${C.red}${tool}: deny${C.reset}`);
+      return true;
+    }
+
+    case '/commit': {
+      if (!isGitRepo()) {
+        console.log(`${C.red}Not a git repository${C.reset}`);
+        return true;
+      }
+      const msg = rest.join(' ').trim();
+      if (msg) {
+        const hash = commit(msg);
+        if (hash) {
+          console.log(`${C.green}Committed: ${hash} — ${msg}${C.reset}`);
+        } else {
+          console.log(`${C.red}Commit failed${C.reset}`);
+        }
+        return true;
+      }
+      // Smart commit: analyze and suggest
+      const analysis = analyzeDiff();
+      if (!analysis) {
+        console.log(`${C.yellow}No changes to commit${C.reset}`);
+        return true;
+      }
+      console.log(formatDiffSummary());
+      console.log(`${C.dim}Use /commit <message> to commit with a custom message${C.reset}`);
+      return true;
+    }
+
+    case '/diff': {
+      if (!isGitRepo()) {
+        console.log(`${C.red}Not a git repository${C.reset}`);
+        return true;
+      }
+      console.log(formatDiffSummary());
+      return true;
+    }
+
+    case '/branch': {
+      if (!isGitRepo()) {
+        console.log(`${C.red}Not a git repository${C.reset}`);
+        return true;
+      }
+      const branchArg = rest.join(' ').trim();
+      if (!branchArg) {
+        const current = getCurrentBranch();
+        console.log(`${C.bold}${C.white}Branch:${C.reset} ${current || '(detached)'}`);
+        return true;
+      }
+      const branchName = createBranch(branchArg);
+      if (branchName) {
+        console.log(`${C.green}Created and switched to: ${branchName}${C.reset}`);
+      } else {
+        console.log(`${C.red}Failed to create branch${C.reset}`);
+      }
       return true;
     }
 

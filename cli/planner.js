@@ -46,7 +46,7 @@ function ensureDir() {
  */
 function createPlan(task, steps = []) {
   activePlan = {
-    name: `plan-${Date.now()}`,
+    name: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     task,
     steps: steps.map((s) => ({
       description: s.description || s,

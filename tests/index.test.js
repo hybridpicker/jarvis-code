@@ -98,6 +98,15 @@ jest.mock('../cli/planner', () => ({
   AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
 }));
 
+jest.mock('../cli/git', () => ({
+  isGitRepo: jest.fn().mockReturnValue(true),
+  getCurrentBranch: jest.fn().mockReturnValue('main'),
+  formatDiffSummary: jest.fn().mockReturnValue('No changes'),
+  analyzeDiff: jest.fn().mockReturnValue(null),
+  commit: jest.fn().mockReturnValue(null),
+  createBranch: jest.fn().mockReturnValue('feat/test-branch'),
+}));
+
 describe('index.js (REPL commands)', () => {
   let logSpy, writeSpy, exitSpy;
 
@@ -160,6 +169,14 @@ describe('index.js (REPL commands)', () => {
         setAutonomyLevel: jest.fn().mockReturnValue(true),
         getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
         AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
+      }));
+      jest.mock('../cli/git', () => ({
+        isGitRepo: jest.fn().mockReturnValue(true),
+        getCurrentBranch: jest.fn().mockReturnValue('main'),
+        formatDiffSummary: jest.fn().mockReturnValue('No changes'),
+        analyzeDiff: jest.fn().mockReturnValue(null),
+        commit: jest.fn().mockReturnValue(null),
+        createBranch: jest.fn().mockReturnValue('feat/test-branch'),
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
@@ -231,6 +248,14 @@ describe('index.js (REPL commands)', () => {
         setAutonomyLevel: jest.fn().mockReturnValue(true),
         getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
         AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
+      }));
+      jest.mock('../cli/git', () => ({
+        isGitRepo: jest.fn().mockReturnValue(true),
+        getCurrentBranch: jest.fn().mockReturnValue('main'),
+        formatDiffSummary: jest.fn().mockReturnValue('No changes'),
+        analyzeDiff: jest.fn().mockReturnValue(null),
+        commit: jest.fn().mockReturnValue(null),
+        createBranch: jest.fn().mockReturnValue('feat/test-branch'),
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -339,6 +364,14 @@ describe('index.js (REPL commands)', () => {
         setAutonomyLevel: jest.fn().mockReturnValue(true),
         getAutonomyLevel: jest.fn().mockReturnValue('interactive'),
         AUTONOMY_LEVELS: ['interactive', 'semi-auto', 'autonomous'],
+      }));
+      jest.mock('../cli/git', () => ({
+        isGitRepo: jest.fn().mockReturnValue(true),
+        getCurrentBranch: jest.fn().mockReturnValue('main'),
+        formatDiffSummary: jest.fn().mockReturnValue('No changes'),
+        analyzeDiff: jest.fn().mockReturnValue(null),
+        commit: jest.fn().mockReturnValue(null),
+        createBranch: jest.fn().mockReturnValue('feat/test-branch'),
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -684,6 +717,38 @@ describe('index.js (REPL commands)', () => {
       await lineHandler('/auto invalid');
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Unknown level');
+    });
+
+    // ─── Git commands ───────────────────────────────────
+    it('handles /diff command', async () => {
+      const { formatDiffSummary } = require('../cli/git');
+      await lineHandler('/diff');
+      expect(formatDiffSummary).toHaveBeenCalled();
+    });
+
+    it('handles /branch without name', async () => {
+      await lineHandler('/branch');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('main');
+    });
+
+    it('handles /branch with name', async () => {
+      const { createBranch } = require('../cli/git');
+      await lineHandler('/branch add new feature');
+      expect(createBranch).toHaveBeenCalledWith('add new feature');
+    });
+
+    it('handles /commit without changes', async () => {
+      await lineHandler('/commit');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('No changes');
+    });
+
+    it('handles /commit with message', async () => {
+      const { commit } = require('../cli/git');
+      commit.mockReturnValueOnce('abc1234');
+      await lineHandler('/commit fix: bug fix');
+      expect(commit).toHaveBeenCalledWith('fix: bug fix');
     });
   });
 });
