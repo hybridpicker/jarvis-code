@@ -4,9 +4,11 @@
  */
 
 const { C, Spinner, formatToolCall, formatResult } = require('./ui');
-const { callOllamaStream, parseToolArgs } = require('./ollama');
+const { callStream } = require('./providers/registry');
+const { parseToolArgs } = require('./ollama');
 const { TOOL_DEFINITIONS, executeTool } = require('./tools');
 const { gatherProjectContext } = require('./context');
+const { fitToContext, getUsage } = require('./context-engine');
 
 const MAX_ITERATIONS = 30;
 const CWD = process.cwd();
@@ -47,6 +49,10 @@ function getConversationLength() {
   return conversationMessages.length;
 }
 
+function getConversationMessages() {
+  return conversationMessages;
+}
+
 /**
  * Process a single user input through the agentic loop.
  * Maintains conversation state across calls.
@@ -57,11 +63,38 @@ async function processInput(userInput) {
   const systemPrompt = buildSystemPrompt();
   const fullMessages = [{ role: 'system', content: systemPrompt }, ...conversationMessages];
 
+  // Context-aware compression: fit messages into context window
+  const { messages: fittedMessages, compressed, tokensRemoved } = fitToContext(
+    fullMessages,
+    TOOL_DEFINITIONS
+  );
+
+  if (compressed) {
+    console.log(`${C.dim}  [context compressed, ~${tokensRemoved} tokens freed]${C.reset}`);
+  }
+
+  // Use fitted messages for the API call, but keep fullMessages reference for appending
+  let apiMessages = fittedMessages;
+
   for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const spinner = new Spinner('Connecting...');
+    spinner.start();
+    let firstToken = true;
+
     let result;
     try {
-      result = await callOllamaStream(fullMessages, TOOL_DEFINITIONS);
+      result = await callStream(apiMessages, TOOL_DEFINITIONS, {
+        onToken: (text) => {
+          if (firstToken) {
+            spinner.stop();
+            process.stdout.write(`${C.blue}`);
+            firstToken = false;
+          }
+          process.stdout.write(text);
+        },
+      });
     } catch (err) {
+      spinner.stop();
       console.log(`${C.red}${err.message}${C.reset}`);
 
       if (err.message.includes('429')) {
@@ -72,6 +105,12 @@ async function processInput(userInput) {
       break;
     }
 
+    if (firstToken) {
+      spinner.stop();
+    } else {
+      process.stdout.write(`${C.reset}\n`);
+    }
+
     const { content, tool_calls } = result;
 
     // Build assistant message for history
@@ -80,7 +119,7 @@ async function processInput(userInput) {
       assistantMsg.tool_calls = tool_calls;
     }
     conversationMessages.push(assistantMsg);
-    fullMessages.push(assistantMsg);
+    apiMessages.push(assistantMsg);
 
     // No tool calls → response complete
     if (!tool_calls || tool_calls.length === 0) {
@@ -97,7 +136,7 @@ async function processInput(userInput) {
         console.log(`${C.red}  ✗ ${fnName}: malformed arguments${C.reset}`);
         const toolMsg = { role: 'tool', content: 'ERROR: Malformed tool arguments', tool_call_id: callId };
         conversationMessages.push(toolMsg);
-        fullMessages.push(toolMsg);
+        apiMessages.push(toolMsg);
         continue;
       }
 
@@ -114,11 +153,11 @@ async function processInput(userInput) {
 
       const toolMsg = { role: 'tool', content: truncated, tool_call_id: callId };
       conversationMessages.push(toolMsg);
-      fullMessages.push(toolMsg);
+      apiMessages.push(toolMsg);
     }
   }
 
   console.log(`\n${C.yellow}⚠ Max iterations (${MAX_ITERATIONS}) reached.${C.reset}`);
 }
 
-module.exports = { processInput, clearConversation, getConversationLength };
+module.exports = { processInput, clearConversation, getConversationLength, getConversationMessages };

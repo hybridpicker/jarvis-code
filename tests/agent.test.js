@@ -1,7 +1,9 @@
-// Mock all external dependencies before requiring agent
-jest.mock('../cli/ollama', () => ({
-  callOllamaStream: jest.fn(),
-  parseToolArgs: jest.requireActual('../cli/ollama').parseToolArgs,
+// Mock the provider registry before requiring agent
+jest.mock('../cli/providers/registry', () => ({
+  callStream: jest.fn(),
+  getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
+  getActiveProviderName: jest.fn().mockReturnValue('ollama'),
+  _reset: jest.fn(),
 }));
 
 jest.mock('../cli/tools', () => ({
@@ -13,8 +15,17 @@ jest.mock('../cli/context', () => ({
   gatherProjectContext: jest.fn().mockReturnValue('PACKAGE: test-project'),
 }));
 
-const { processInput, clearConversation, getConversationLength } = require('../cli/agent');
-const { callOllamaStream } = require('../cli/ollama');
+jest.mock('../cli/context-engine', () => ({
+  fitToContext: jest.fn().mockImplementation((messages) => ({
+    messages,
+    compressed: false,
+    tokensRemoved: 0,
+  })),
+  getUsage: jest.fn().mockReturnValue({ used: 100, limit: 128000, percentage: 0.1 }),
+}));
+
+const { processInput, clearConversation, getConversationLength, getConversationMessages } = require('../cli/agent');
+const { callStream } = require('../cli/providers/registry');
 const { executeTool } = require('../cli/tools');
 
 describe('agent.js', () => {
@@ -32,39 +43,53 @@ describe('agent.js', () => {
     writeSpy.mockRestore();
   });
 
+  // Helper: mock callStream to capture and invoke onToken, then return result
+  function mockStreamResponse(content, tool_calls = []) {
+    callStream.mockImplementationOnce(async (msgs, tools, options) => {
+      if (options?.onToken && content) {
+        options.onToken(content);
+      }
+      return { content, tool_calls };
+    });
+  }
+
   // ─── conversation state ───────────────────────────────────
   describe('conversation state', () => {
     it('starts with empty conversation', () => {
       expect(getConversationLength()).toBe(0);
     });
 
-    it('clearConversation resets state', () => {
-      callOllamaStream.mockResolvedValueOnce({ content: 'hello', tool_calls: [] });
-      return processInput('test').then(() => {
-        expect(getConversationLength()).toBeGreaterThan(0);
-        clearConversation();
-        expect(getConversationLength()).toBe(0);
-      });
+    it('clearConversation resets state', async () => {
+      mockStreamResponse('hello');
+      await processInput('test');
+      expect(getConversationLength()).toBeGreaterThan(0);
+      clearConversation();
+      expect(getConversationLength()).toBe(0);
+    });
+
+    it('getConversationMessages returns messages array', async () => {
+      mockStreamResponse('hello');
+      await processInput('test');
+      const msgs = getConversationMessages();
+      expect(msgs.length).toBe(2);
+      expect(msgs[0].role).toBe('user');
+      expect(msgs[1].role).toBe('assistant');
     });
   });
 
   // ─── processInput ─────────────────────────────────────────
   describe('processInput()', () => {
     it('handles simple text response (no tools)', async () => {
-      callOllamaStream.mockResolvedValueOnce({ content: 'Hello there!', tool_calls: [] });
+      mockStreamResponse('Hello there!');
       await processInput('Hi');
       expect(getConversationLength()).toBe(2); // user + assistant
     });
 
     it('handles tool call and result', async () => {
-      callOllamaStream
-        .mockResolvedValueOnce({
-          content: 'Let me check...',
-          tool_calls: [
-            { function: { name: 'bash', arguments: { command: 'echo test' } }, id: 'call-1' },
-          ],
-        })
-        .mockResolvedValueOnce({ content: 'Done!', tool_calls: [] });
+      mockStreamResponse('Let me check...', [
+        { function: { name: 'bash', arguments: { command: 'echo test' } }, id: 'call-1' },
+      ]);
+      mockStreamResponse('Done!');
 
       executeTool.mockResolvedValueOnce('test output');
 
@@ -74,12 +99,10 @@ describe('agent.js', () => {
     });
 
     it('handles malformed tool arguments', async () => {
-      callOllamaStream
-        .mockResolvedValueOnce({
-          content: '',
-          tool_calls: [{ function: { name: 'bash', arguments: null }, id: 'call-1' }],
-        })
-        .mockResolvedValueOnce({ content: 'Oops', tool_calls: [] });
+      mockStreamResponse('', [
+        { function: { name: 'bash', arguments: null }, id: 'call-1' },
+      ]);
+      mockStreamResponse('Oops');
 
       await processInput('test');
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
@@ -87,17 +110,17 @@ describe('agent.js', () => {
     });
 
     it('handles API errors', async () => {
-      callOllamaStream.mockRejectedValueOnce(new Error('API Error: connection refused'));
+      callStream.mockRejectedValueOnce(new Error('API Error: connection refused'));
       await processInput('test');
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('API Error');
     });
 
     it('maintains conversation across multiple calls', async () => {
-      callOllamaStream.mockResolvedValueOnce({ content: 'First response', tool_calls: [] });
+      mockStreamResponse('First response');
       await processInput('First message');
 
-      callOllamaStream.mockResolvedValueOnce({ content: 'Second response', tool_calls: [] });
+      mockStreamResponse('Second response');
       await processInput('Second message');
 
       expect(getConversationLength()).toBe(4); // 2 user + 2 assistant
@@ -105,35 +128,55 @@ describe('agent.js', () => {
 
     it('truncates large tool results', async () => {
       const largeOutput = 'x'.repeat(60000);
-      callOllamaStream
-        .mockResolvedValueOnce({
-          content: '',
-          tool_calls: [{ function: { name: 'bash', arguments: { command: 'test' } }, id: 'c1' }],
-        })
-        .mockResolvedValueOnce({ content: 'Done', tool_calls: [] });
+      mockStreamResponse('', [
+        { function: { name: 'bash', arguments: { command: 'test' } }, id: 'c1' },
+      ]);
+      mockStreamResponse('Done');
 
       executeTool.mockResolvedValueOnce(largeOutput);
 
       await processInput('run something big');
-      // Verify the message was added (not checking exact truncation in message array)
       expect(getConversationLength()).toBeGreaterThan(0);
     });
 
     it('handles multiple tool calls in one response', async () => {
-      callOllamaStream
-        .mockResolvedValueOnce({
-          content: 'Running both...',
-          tool_calls: [
-            { function: { name: 'bash', arguments: { command: 'echo 1' } }, id: 'c1' },
-            { function: { name: 'bash', arguments: { command: 'echo 2' } }, id: 'c2' },
-          ],
-        })
-        .mockResolvedValueOnce({ content: 'Both done', tool_calls: [] });
+      mockStreamResponse('Running both...', [
+        { function: { name: 'bash', arguments: { command: 'echo 1' } }, id: 'c1' },
+        { function: { name: 'bash', arguments: { command: 'echo 2' } }, id: 'c2' },
+      ]);
+      mockStreamResponse('Both done');
 
       executeTool.mockResolvedValueOnce('1').mockResolvedValueOnce('2');
 
       await processInput('run both');
       expect(executeTool).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles rate limit (429) and continues loop', async () => {
+      // Mock setTimeout to resolve immediately
+      const origSetTimeout = global.setTimeout;
+      global.setTimeout = (fn) => origSetTimeout(fn, 0);
+
+      callStream.mockRejectedValueOnce(new Error('API Error: 429 Too Many Requests'));
+      mockStreamResponse('Success after retry');
+
+      await processInput('test');
+
+      global.setTimeout = origSetTimeout;
+
+      expect(callStream).toHaveBeenCalledTimes(2);
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Rate limit');
+    });
+
+    it('passes onToken callback to callStream', async () => {
+      callStream.mockImplementationOnce(async (msgs, tools, options) => {
+        expect(options).toHaveProperty('onToken');
+        expect(typeof options.onToken).toBe('function');
+        return { content: 'test', tool_calls: [] };
+      });
+
+      await processInput('hi');
     });
   });
 });

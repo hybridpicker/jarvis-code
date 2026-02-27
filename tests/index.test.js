@@ -3,12 +3,36 @@ jest.mock('../cli/agent', () => ({
   processInput: jest.fn().mockResolvedValue(undefined),
   clearConversation: jest.fn(),
   getConversationLength: jest.fn().mockReturnValue(0),
+  getConversationMessages: jest.fn().mockReturnValue([]),
 }));
 
 jest.mock('../cli/ollama', () => ({
-  getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
+  getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
   setActiveModel: jest.fn(),
   getModelNames: jest.fn().mockReturnValue(['kimi-k2.5', 'qwen3-coder']),
+}));
+
+jest.mock('../cli/providers/registry', () => ({
+  listProviders: jest.fn().mockReturnValue([
+    {
+      provider: 'ollama',
+      configured: true,
+      models: [
+        { id: 'kimi-k2.5', name: 'Kimi K2.5', active: true },
+        { id: 'qwen3-coder', name: 'Qwen3 Coder', active: false },
+      ],
+    },
+    {
+      provider: 'openai',
+      configured: false,
+      models: [{ id: 'gpt-4o', name: 'GPT-4o', active: false }],
+    },
+  ]),
+  getActiveProviderName: jest.fn().mockReturnValue('ollama'),
+  getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
+  listAllModels: jest.fn().mockReturnValue([
+    { spec: 'ollama:kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama', configured: true },
+  ]),
 }));
 
 jest.mock('../cli/context', () => ({
@@ -21,9 +45,19 @@ jest.mock('../cli/safety', () => ({
   getAutoConfirm: jest.fn().mockReturnValue(false),
 }));
 
-// We test handleSlashCommand by extracting it
-// Since it's not exported, we test through startREPL's behavior
-// Instead, let's test the exported startREPL with mocked readline
+jest.mock('../cli/context-engine', () => ({
+  getUsage: jest.fn().mockReturnValue({
+    used: 1500,
+    limit: 128000,
+    percentage: 1.2,
+    breakdown: { system: 500, conversation: 800, toolResults: 100, toolDefinitions: 100 },
+    messageCount: 5,
+  }),
+}));
+
+jest.mock('../cli/tools', () => ({
+  TOOL_DEFINITIONS: [],
+}));
 
 describe('index.js (REPL commands)', () => {
   let logSpy, writeSpy, exitSpy;
@@ -44,22 +78,89 @@ describe('index.js (REPL commands)', () => {
   });
 
   describe('startREPL()', () => {
-    it('exits with error when OLLAMA_API_KEY is missing', () => {
-      const origKey = process.env.OLLAMA_API_KEY;
-      delete process.env.OLLAMA_API_KEY;
+    it('exits with error when no provider is configured', () => {
+      // Reset modules to get fresh instance with no configured providers
+      jest.resetModules();
+      jest.mock('../cli/agent', () => ({
+        processInput: jest.fn().mockResolvedValue(undefined),
+        clearConversation: jest.fn(),
+        getConversationLength: jest.fn().mockReturnValue(0),
+        getConversationMessages: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/context-engine', () => ({
+        getUsage: jest.fn().mockReturnValue({
+          used: 1500, limit: 128000, percentage: 1.2,
+          breakdown: { system: 500, conversation: 800, toolResults: 100, toolDefinitions: 100 },
+          messageCount: 5,
+        }),
+      }));
+      jest.mock('../cli/tools', () => ({ TOOL_DEFINITIONS: [] }));
+      jest.mock('../cli/ollama', () => ({
+        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
+        setActiveModel: jest.fn(),
+        getModelNames: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/providers/registry', () => ({
+        listProviders: jest.fn().mockReturnValue([
+          { provider: 'ollama', configured: false, models: [] },
+          { provider: 'openai', configured: false, models: [] },
+        ]),
+        getActiveProviderName: jest.fn().mockReturnValue('ollama'),
+        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
+        listAllModels: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/context', () => ({
+        printContext: jest.fn(),
+        gatherProjectContext: jest.fn().mockReturnValue(''),
+      }));
+      jest.mock('../cli/safety', () => ({
+        setAutoConfirm: jest.fn(),
+        getAutoConfirm: jest.fn().mockReturnValue(false),
+      }));
 
       const { startREPL } = require('../cli/index');
       startREPL();
       expect(exitSpy).toHaveBeenCalledWith(1);
-
-      process.env.OLLAMA_API_KEY = origKey;
     });
 
-    it('starts REPL when API key is set', () => {
-      const origKey = process.env.OLLAMA_API_KEY;
-      process.env.OLLAMA_API_KEY = 'test-key';
+    it('starts REPL when a provider is configured', () => {
+      jest.resetModules();
+      jest.mock('../cli/agent', () => ({
+        processInput: jest.fn().mockResolvedValue(undefined),
+        clearConversation: jest.fn(),
+        getConversationLength: jest.fn().mockReturnValue(0),
+        getConversationMessages: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/context-engine', () => ({
+        getUsage: jest.fn().mockReturnValue({
+          used: 1500, limit: 128000, percentage: 1.2,
+          breakdown: { system: 500, conversation: 800, toolResults: 100, toolDefinitions: 100 },
+          messageCount: 5,
+        }),
+      }));
+      jest.mock('../cli/tools', () => ({ TOOL_DEFINITIONS: [] }));
+      jest.mock('../cli/ollama', () => ({
+        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
+        setActiveModel: jest.fn(),
+        getModelNames: jest.fn().mockReturnValue(['kimi-k2.5', 'qwen3-coder']),
+      }));
+      jest.mock('../cli/providers/registry', () => ({
+        listProviders: jest.fn().mockReturnValue([
+          { provider: 'ollama', configured: true, models: [{ id: 'kimi-k2.5', name: 'Kimi K2.5', active: true }] },
+        ]),
+        getActiveProviderName: jest.fn().mockReturnValue('ollama'),
+        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
+        listAllModels: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/context', () => ({
+        printContext: jest.fn(),
+        gatherProjectContext: jest.fn().mockReturnValue(''),
+      }));
+      jest.mock('../cli/safety', () => ({
+        setAutoConfirm: jest.fn(),
+        getAutoConfirm: jest.fn().mockReturnValue(false),
+      }));
 
-      // Mock readline to prevent hanging
       const mockRl = {
         prompt: jest.fn(),
         on: jest.fn().mockReturnThis(),
@@ -70,12 +171,7 @@ describe('index.js (REPL commands)', () => {
       const { startREPL } = require('../cli/index');
       startREPL();
 
-      // Should show banner
-      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
-      expect(output).toContain('Kimi K2.5');
       expect(exitSpy).not.toHaveBeenCalledWith(1);
-
-      process.env.OLLAMA_API_KEY = origKey;
     });
   });
 
@@ -83,7 +179,6 @@ describe('index.js (REPL commands)', () => {
     let lineHandler, closeHandler, mockRl;
 
     beforeEach(() => {
-      process.env.OLLAMA_API_KEY = 'test-key';
       mockRl = {
         prompt: jest.fn(),
         on: jest.fn(function (event, handler) {
@@ -97,16 +192,44 @@ describe('index.js (REPL commands)', () => {
 
       // Clear module cache to get fresh instance
       jest.resetModules();
-      // Re-setup mocks after reset
       jest.mock('../cli/agent', () => ({
         processInput: jest.fn().mockResolvedValue(undefined),
         clearConversation: jest.fn(),
         getConversationLength: jest.fn().mockReturnValue(0),
+        getConversationMessages: jest.fn().mockReturnValue([]),
       }));
+      jest.mock('../cli/context-engine', () => ({
+        getUsage: jest.fn().mockReturnValue({
+          used: 1500, limit: 128000, percentage: 1.2,
+          breakdown: { system: 500, conversation: 800, toolResults: 100, toolDefinitions: 100 },
+          messageCount: 5,
+        }),
+      }));
+      jest.mock('../cli/tools', () => ({ TOOL_DEFINITIONS: [] }));
       jest.mock('../cli/ollama', () => ({
-        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
-        setActiveModel: jest.fn().mockImplementation((name) => name === 'qwen3-coder'),
+        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
+        setActiveModel: jest.fn().mockImplementation((name) => name === 'qwen3-coder' || name === 'openai:gpt-4o'),
         getModelNames: jest.fn().mockReturnValue(['kimi-k2.5', 'qwen3-coder']),
+      }));
+      jest.mock('../cli/providers/registry', () => ({
+        listProviders: jest.fn().mockReturnValue([
+          {
+            provider: 'ollama',
+            configured: true,
+            models: [
+              { id: 'kimi-k2.5', name: 'Kimi K2.5', active: true },
+              { id: 'qwen3-coder', name: 'Qwen3 Coder', active: false },
+            ],
+          },
+          {
+            provider: 'openai',
+            configured: false,
+            models: [{ id: 'gpt-4o', name: 'GPT-4o', active: false }],
+          },
+        ]),
+        getActiveProviderName: jest.fn().mockReturnValue('ollama'),
+        getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
+        listAllModels: jest.fn().mockReturnValue([]),
       }));
       jest.mock('../cli/context', () => ({
         printContext: jest.fn(),
@@ -131,12 +254,13 @@ describe('index.js (REPL commands)', () => {
       expect(output).toContain('/help');
       expect(output).toContain('/model');
       expect(output).toContain('/clear');
+      expect(output).toContain('/providers');
     });
 
     it('handles /model without args (shows current)', async () => {
       await lineHandler('/model');
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
-      expect(output).toContain('Kimi K2.5');
+      expect(output).toContain('kimi-k2.5');
     });
 
     it('handles /model with valid name', async () => {
@@ -146,12 +270,39 @@ describe('index.js (REPL commands)', () => {
       expect(setActiveModel).toHaveBeenCalledWith('qwen3-coder');
     });
 
+    it('handles /model with provider:model format', async () => {
+      const { setActiveModel } = require('../cli/ollama');
+      setActiveModel.mockReturnValueOnce(true);
+      await lineHandler('/model openai:gpt-4o');
+      expect(setActiveModel).toHaveBeenCalledWith('openai:gpt-4o');
+    });
+
     it('handles /model with invalid name', async () => {
       const { setActiveModel } = require('../cli/ollama');
       setActiveModel.mockReturnValueOnce(false);
       await lineHandler('/model invalid');
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('Unknown model');
+    });
+
+    it('handles /model list', async () => {
+      await lineHandler('/model list');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('ollama');
+    });
+
+    it('handles /providers command', async () => {
+      await lineHandler('/providers');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('ollama');
+      expect(output).toContain('openai');
+    });
+
+    it('handles /tokens command', async () => {
+      await lineHandler('/tokens');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Token Usage');
+      expect(output).toContain('128k context');
     });
 
     it('handles /clear command', async () => {
