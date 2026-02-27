@@ -9,8 +9,8 @@ Repo: `github.com/hybridpicker/jarvis-code`
 
 ```
 bin/jarvis-code.js       → Entrypoint (shebang, .env, startREPL)
-cli/index.js             → REPL + Slash Commands (/model, /providers, etc.)
-cli/agent.js             → Agentic Loop + Conversation State
+cli/index.js             → REPL + ~35 Slash Commands
+cli/agent.js             → Agentic Loop + Conversation State + MCP routing
 cli/providers/           → Multi-Provider Abstraction Layer
   base.js                → Abstract Provider Interface
   ollama.js              → Ollama Cloud Provider (Kimi K2.5, Qwen3 Coder)
@@ -19,12 +19,21 @@ cli/providers/           → Multi-Provider Abstraction Layer
   local.js               → Local Ollama Server Provider
   registry.js            → Provider Registry + Model Resolution
 cli/ollama.js            → Backward-compatible wrapper (delegates to providers/)
-cli/tools.js             → 6 Tool Definitions + Implementations
+cli/tools.js             → 12 Tool Definitions + Implementations
+cli/context-engine.js    → Token Management + Context Compression
+cli/session.js           → Session Persistence (.jarvis/sessions/)
+cli/memory.js            → Project Memory (.jarvis/memory/ + JARVIS.md)
+cli/permissions.js       → Tool Permission System (allow/ask/deny)
+cli/planner.js           → Plan Mode + Autonomy Levels
+cli/git.js               → Git Intelligence (smart commit, diff, branch)
+cli/render.js            → Rich Terminal Rendering (Markdown, Syntax Highlighting)
+cli/mcp.js               → MCP Client (JSON-RPC over stdio)
+cli/hooks.js             → Hook System (pre-tool, post-tool, etc.)
 cli/diff.js              → LCS Diff + Colored Output + Confirmations
 cli/context.js           → Auto-Context (package.json, git, README)
 cli/ui.js                → ANSI Colors, Spinner, Formatting
 cli/safety.js            → Forbidden/Dangerous Pattern Detection
-tests/                   → Jest, 14 Suites, 336 Tests, 95%+ Coverage
+tests/                   → Jest, 23 Suites, 634 Tests, 90%+ Coverage
 ```
 
 ## Commit Message Convention
@@ -47,9 +56,10 @@ Kein `Co-Authored-By: Claude` oder andere AI-Attributionen. NIEMALS.
 ## Testing
 
 - Framework: Jest
-- Coverage-Ziel: 95%+ Statements, 90%+ Branches
+- Coverage-Ziel: 90%+ Statements, 80%+ Branches
 - Run: `npm test` (jest --coverage)
 - Watch: `npm run test:watch`
+- CI: GitHub Actions on push/PR (Node 18/20/22)
 
 ## Provider System
 
@@ -72,11 +82,28 @@ Kein `Co-Authored-By: Claude` oder andere AI-Attributionen. NIEMALS.
 - Provider-Abstraction: Jeder Provider implementiert `chat()`, `stream()`, `isConfigured()`
 - `registry.js` verwaltet aktiven Provider + Model, resolving von Model-Specs
 - `agent.js` nutzt `registry.callStream()` mit `onToken` Callback für Streaming
+- Streaming-Output wird durch `renderMarkdown()` gepiped (rich terminal rendering)
 - `ollama.js` ist Backward-compatible Wrapper (delegiert an Registry)
-- Tool-Implementierungen sind async (wegen Confirmation Prompts)
-- Conversation State ist global in agent.js (conversationMessages Array)
-- Diff-Algorithmus: LCS (Longest Common Subsequence) mit DP-Tabelle
-- Safety: 16 Forbidden Patterns (blocked) + 9 Dangerous Patterns (confirm)
-- Auto-Context: Läuft bei jedem Prompt (package.json, git, README, .gitignore)
-- Max 30 Iterationen pro User-Input im Agentic Loop
+- 12 Tools: bash, read_file, write_file, edit_file, list_directory, search_files, glob, grep, patch_file, web_fetch, web_search, ask_user
+- Permission-System: allow/ask/deny pro Tool (konfigurierbar in `.jarvis/config.json`)
+- Context Engine: Token-Counting, Auto-Compression bei >70% Window
+- Session-Persistenz: Auto-Save nach jedem Turn in `.jarvis/sessions/`
+- Project Memory: Key-Value + JARVIS.md (wie CLAUDE.md)
+- Plan Mode: Analyse → Plan → Approve → Execute
+- Git Intelligence: Smart Commit, Diff-Analyse, Branch-Erstellung
+- MCP Client: JSON-RPC over stdio, Tool-Discovery, Routing über `mcp_` Prefix
+- Hook System: pre-tool, post-tool, pre-commit, post-response, session-start, session-end
+- Lazy `process.cwd()` Evaluation in Modulen (für Jest-Mocking)
 - Tool-Output wird bei 50KB abgeschnitten
+- Max 30 Iterationen pro User-Input im Agentic Loop
+
+## .jarvis/ Verzeichnis
+
+```
+.jarvis/
+├── sessions/          # Gespeicherte Conversations
+├── memory/            # Persistentes Projekt-Wissen
+├── plans/             # Gespeicherte Plans
+├── hooks/             # Custom Hook-Scripts
+└── config.json        # Permissions, MCP-Server, Hooks, Aliases
+```
