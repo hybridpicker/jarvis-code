@@ -110,6 +110,108 @@ const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'glob',
+      description: 'Find files matching a glob pattern. Fast file search by name/extension.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: "Glob pattern (e.g. '**/*.ts', 'src/**/*.test.js')" },
+          path: { type: 'string', description: 'Base directory (default: project root)' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'grep',
+      description: 'Search file contents with regex. Returns matching lines with file paths and line numbers.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Regex pattern to search for' },
+          path: { type: 'string', description: 'Directory or file to search (default: project root)' },
+          include: { type: 'string', description: "File filter (e.g. '*.js', '*.ts')" },
+          ignore_case: { type: 'boolean', description: 'Case-insensitive search' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'patch_file',
+      description: 'Apply multiple text replacements to a file in a single operation. Each replacement has old_text and new_text.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'File path' },
+          patches: {
+            type: 'array',
+            description: 'Array of { old_text, new_text } replacements to apply in order',
+            items: {
+              type: 'object',
+              properties: {
+                old_text: { type: 'string', description: 'Text to find' },
+                new_text: { type: 'string', description: 'Replacement text' },
+              },
+              required: ['old_text', 'new_text'],
+            },
+          },
+        },
+        required: ['path', 'patches'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_fetch',
+      description: 'Fetch content from a URL. Returns the text content of the page.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'URL to fetch' },
+          max_length: { type: 'number', description: 'Max response length in chars (default: 10000)' },
+        },
+        required: ['url'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web using DuckDuckGo. Returns search results with titles and snippets.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          max_results: { type: 'number', description: 'Max results (default: 5)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ask_user',
+      description: 'Ask the user a question and wait for their response. Use when you need clarification or confirmation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The question to ask the user' },
+        },
+        required: ['question'],
+      },
+    },
+  },
 ];
 
 // ─── Tool Implementations ─────────────────────────────────────
@@ -228,6 +330,143 @@ async function executeTool(name, args) {
       } catch {
         return '(no matches)';
       }
+    }
+
+    case 'glob': {
+      const basePath = args.path ? resolvePath(args.path) : CWD;
+      const pattern = args.pattern;
+      try {
+        // Use find + shell glob matching
+        const out = execSync(
+          `find "${basePath}" -name "node_modules" -prune -o -name ".git" -prune -o -path "${pattern}" -print 2>/dev/null | head -100`,
+          { cwd: basePath, timeout: 15000, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 }
+        );
+        if (!out.trim()) {
+          // Fallback: try as a simple name pattern
+          const namePattern = pattern.replace(/\*\*\//g, '').replace(/\//g, '');
+          const out2 = execSync(
+            `find "${basePath}" -name "node_modules" -prune -o -name ".git" -prune -o -name "${namePattern}" -print 2>/dev/null | head -100`,
+            { cwd: basePath, timeout: 15000, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 }
+          );
+          return out2.trim() || '(no matches)';
+        }
+        return out.trim();
+      } catch {
+        return '(no matches)';
+      }
+    }
+
+    case 'grep': {
+      const searchPath = args.path ? resolvePath(args.path) : CWD;
+      const includeFlag = args.include ? `--include="${args.include}"` : '';
+      const caseFlag = args.ignore_case ? '-i' : '';
+      try {
+        const out = execSync(
+          `grep -rn ${caseFlag} ${includeFlag} "${args.pattern}" "${searchPath}" 2>/dev/null | head -100`,
+          { cwd: CWD, timeout: 30000, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 }
+        );
+        return out.trim() || '(no matches)';
+      } catch {
+        return '(no matches)';
+      }
+    }
+
+    case 'patch_file': {
+      const fp = resolvePath(args.path);
+      if (!fs.existsSync(fp)) return `ERROR: File not found: ${fp}`;
+
+      const patches = args.patches;
+      if (!Array.isArray(patches) || patches.length === 0) return 'ERROR: No patches provided';
+
+      let content = fs.readFileSync(fp, 'utf-8');
+
+      // Validate all patches first
+      for (let i = 0; i < patches.length; i++) {
+        const { old_text } = patches[i];
+        if (!content.includes(old_text)) {
+          return `ERROR: Patch ${i + 1} old_text not found in ${fp}`;
+        }
+      }
+
+      // Show combined diff
+      let preview = content;
+      for (const { old_text, new_text } of patches) {
+        preview = preview.replace(old_text, new_text);
+      }
+      showEditDiff(fp, content, preview);
+      const ok = await confirmFileChange('Apply patches');
+      if (!ok) return 'CANCELLED: User declined to apply patches.';
+
+      // Apply all patches
+      for (const { old_text, new_text } of patches) {
+        content = content.replace(old_text, new_text);
+      }
+      fs.writeFileSync(fp, content, 'utf-8');
+      return `Patched: ${fp} (${patches.length} replacements)`;
+    }
+
+    case 'web_fetch': {
+      const url = args.url;
+      const maxLen = args.max_length || 10000;
+      try {
+        // Use curl for portability
+        const out = execSync(
+          `curl -sL --max-time 15 --max-filesize 1048576 "${url}" 2>/dev/null`,
+          { timeout: 20000, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 }
+        );
+        // Strip HTML tags for cleaner output
+        const text = out.replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return text.substring(0, maxLen) || '(empty response)';
+      } catch (e) {
+        return `ERROR: Failed to fetch ${url}: ${e.message}`;
+      }
+    }
+
+    case 'web_search': {
+      const query = encodeURIComponent(args.query);
+      const maxResults = args.max_results || 5;
+      try {
+        const out = execSync(
+          `curl -sL "https://html.duckduckgo.com/html/?q=${query}" --max-time 10 2>/dev/null`,
+          { timeout: 15000, encoding: 'utf-8', maxBuffer: 2 * 1024 * 1024 }
+        );
+        // Parse results from DuckDuckGo HTML
+        const results = [];
+        const regex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+        let match;
+        while ((match = regex.exec(out)) !== null && results.length < maxResults) {
+          const href = match[1].replace(/.*uddg=/, '').split('&')[0];
+          const title = match[2].replace(/<[^>]+>/g, '').trim();
+          try {
+            results.push({ title, url: decodeURIComponent(href) });
+          } catch {
+            results.push({ title, url: href });
+          }
+        }
+        if (results.length === 0) return '(no results)';
+        return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join('\n\n');
+      } catch {
+        return 'ERROR: Web search failed';
+      }
+    }
+
+    case 'ask_user': {
+      const question = args.question;
+      return new Promise((resolve) => {
+        const rl = require('readline').createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        console.log(`\n${C.cyan}${C.bold}  ? ${question}${C.reset}`);
+        rl.question(`${C.cyan}  > ${C.reset}`, (answer) => {
+          rl.close();
+          resolve(answer.trim() || '(no response)');
+        });
+      });
     }
 
     default:

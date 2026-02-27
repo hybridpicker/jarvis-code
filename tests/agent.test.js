@@ -32,6 +32,18 @@ jest.mock('../cli/memory', () => ({
   getMemoryContext: jest.fn().mockReturnValue(''),
 }));
 
+jest.mock('../cli/permissions', () => ({
+  checkPermission: jest.fn().mockReturnValue('allow'),
+}));
+
+jest.mock('../cli/safety', () => ({
+  isForbidden: jest.fn().mockReturnValue(null),
+  isDangerous: jest.fn().mockReturnValue(false),
+  confirm: jest.fn().mockResolvedValue(true),
+  setAutoConfirm: jest.fn(),
+  getAutoConfirm: jest.fn().mockReturnValue(false),
+}));
+
 const { processInput, clearConversation, getConversationLength, getConversationMessages, setConversationMessages } = require('../cli/agent');
 const { callStream } = require('../cli/providers/registry');
 const { executeTool } = require('../cli/tools');
@@ -202,6 +214,37 @@ describe('agent.js', () => {
       });
 
       await processInput('hi');
+    });
+
+    it('blocks tool when permission is deny', async () => {
+      const { checkPermission } = require('../cli/permissions');
+      checkPermission.mockReturnValueOnce('deny');
+
+      mockStreamResponse('Let me run...', [
+        { function: { name: 'bash', arguments: { command: 'ls' } }, id: 'c1' },
+      ]);
+      mockStreamResponse('OK');
+
+      await processInput('list files');
+      expect(executeTool).not.toHaveBeenCalled();
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('denied');
+    });
+
+    it('asks user when permission is ask', async () => {
+      const { checkPermission } = require('../cli/permissions');
+      const { confirm } = require('../cli/safety');
+      checkPermission.mockReturnValueOnce('ask');
+      confirm.mockResolvedValueOnce(false);
+
+      mockStreamResponse('Running...', [
+        { function: { name: 'bash', arguments: { command: 'ls' } }, id: 'c1' },
+      ]);
+      mockStreamResponse('OK');
+
+      await processInput('list files');
+      expect(confirm).toHaveBeenCalled();
+      expect(executeTool).not.toHaveBeenCalled();
     });
   });
 });

@@ -13,6 +13,7 @@ const { getUsage } = require('./context-engine');
 const { TOOL_DEFINITIONS } = require('./tools');
 const { saveSession, loadSession, listSessions, getLastSession } = require('./session');
 const { remember, forget, listMemories } = require('./memory');
+const { listPermissions, setPermission, savePermissions } = require('./permissions');
 
 const CWD = process.cwd();
 
@@ -37,6 +38,11 @@ ${C.bold}${C.white}Memory:${C.reset}
   ${C.cyan}/remember <text>${C.reset}  ${C.dim}Save a memory (key=value or freeform)${C.reset}
   ${C.cyan}/forget <key>${C.reset}     ${C.dim}Delete a memory${C.reset}
   ${C.cyan}/memory${C.reset}           ${C.dim}Show all memories${C.reset}
+
+${C.bold}${C.white}Permissions:${C.reset}
+  ${C.cyan}/permissions${C.reset}      ${C.dim}Show tool permissions${C.reset}
+  ${C.cyan}/allow <tool>${C.reset}     ${C.dim}Auto-allow a tool${C.reset}
+  ${C.cyan}/deny <tool>${C.reset}      ${C.dim}Block a tool${C.reset}
 
   ${C.cyan}/exit${C.reset}             ${C.dim}Quit${C.reset}
 `);
@@ -252,6 +258,41 @@ function handleSlashCommand(input) {
         console.log(`  ${C.cyan}${m.key}${C.reset} = ${m.value}`);
       }
       console.log();
+      return true;
+    }
+
+    case '/permissions': {
+      const perms = listPermissions();
+      console.log(`\n${C.bold}${C.white}Tool Permissions:${C.reset}`);
+      for (const p of perms) {
+        const icon = p.mode === 'allow' ? `${C.green}✓` : p.mode === 'deny' ? `${C.red}✗` : `${C.yellow}?`;
+        console.log(`  ${icon} ${C.reset}${C.bold}${p.tool}${C.reset} ${C.dim}(${p.mode})${C.reset}`);
+      }
+      console.log(`\n${C.dim}Use /allow <tool> or /deny <tool> to change${C.reset}\n`);
+      return true;
+    }
+
+    case '/allow': {
+      const tool = rest.join(' ').trim();
+      if (!tool) {
+        console.log(`${C.red}Usage: /allow <tool>${C.reset}`);
+        return true;
+      }
+      setPermission(tool, 'allow');
+      savePermissions();
+      console.log(`${C.green}${tool}: allow${C.reset}`);
+      return true;
+    }
+
+    case '/deny': {
+      const tool = rest.join(' ').trim();
+      if (!tool) {
+        console.log(`${C.red}Usage: /deny <tool>${C.reset}`);
+        return true;
+      }
+      setPermission(tool, 'deny');
+      savePermissions();
+      console.log(`${C.red}${tool}: deny${C.reset}`);
       return true;
     }
 

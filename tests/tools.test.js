@@ -35,8 +35,8 @@ describe('tools.js', () => {
 
   // ─── TOOL_DEFINITIONS ─────────────────────────────────────
   describe('TOOL_DEFINITIONS', () => {
-    it('defines 6 tools', () => {
-      expect(TOOL_DEFINITIONS).toHaveLength(6);
+    it('defines 12 tools', () => {
+      expect(TOOL_DEFINITIONS).toHaveLength(12);
     });
 
     it('each tool has proper structure', () => {

@@ -73,6 +73,15 @@ jest.mock('../cli/memory', () => ({
   listMemories: jest.fn().mockReturnValue([]),
 }));
 
+jest.mock('../cli/permissions', () => ({
+  listPermissions: jest.fn().mockReturnValue([
+    { tool: 'bash', mode: 'ask' },
+    { tool: 'read_file', mode: 'allow' },
+  ]),
+  setPermission: jest.fn().mockReturnValue(true),
+  savePermissions: jest.fn(),
+}));
+
 describe('index.js (REPL commands)', () => {
   let logSpy, writeSpy, exitSpy;
 
@@ -120,6 +129,11 @@ describe('index.js (REPL commands)', () => {
         remember: jest.fn(),
         forget: jest.fn().mockReturnValue(false),
         listMemories: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/permissions', () => ({
+        listPermissions: jest.fn().mockReturnValue([]),
+        setPermission: jest.fn().mockReturnValue(true),
+        savePermissions: jest.fn(),
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5' }),
@@ -176,6 +190,11 @@ describe('index.js (REPL commands)', () => {
         remember: jest.fn(),
         forget: jest.fn().mockReturnValue(false),
         listMemories: jest.fn().mockReturnValue([]),
+      }));
+      jest.mock('../cli/permissions', () => ({
+        listPermissions: jest.fn().mockReturnValue([]),
+        setPermission: jest.fn().mockReturnValue(true),
+        savePermissions: jest.fn(),
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -266,6 +285,14 @@ describe('index.js (REPL commands)', () => {
         listMemories: jest.fn().mockReturnValue([
           { key: 'lang', value: 'TypeScript', updatedAt: '2025-06-01T00:00:00Z' },
         ]),
+      }));
+      jest.mock('../cli/permissions', () => ({
+        listPermissions: jest.fn().mockReturnValue([
+          { tool: 'bash', mode: 'ask' },
+          { tool: 'read_file', mode: 'allow' },
+        ]),
+        setPermission: jest.fn().mockReturnValue(true),
+        savePermissions: jest.fn(),
       }));
       jest.mock('../cli/ollama', () => ({
         getActiveModel: jest.fn().mockReturnValue({ id: 'kimi-k2.5', name: 'Kimi K2.5', provider: 'ollama' }),
@@ -524,6 +551,40 @@ describe('index.js (REPL commands)', () => {
       const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(output).toContain('lang');
       expect(output).toContain('TypeScript');
+    });
+
+    // ─── Permission commands ────────────────────────────
+    it('handles /permissions command', async () => {
+      await lineHandler('/permissions');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('bash');
+      expect(output).toContain('ask');
+    });
+
+    it('handles /allow command', async () => {
+      const { setPermission, savePermissions } = require('../cli/permissions');
+      await lineHandler('/allow bash');
+      expect(setPermission).toHaveBeenCalledWith('bash', 'allow');
+      expect(savePermissions).toHaveBeenCalled();
+    });
+
+    it('handles /deny command', async () => {
+      const { setPermission, savePermissions } = require('../cli/permissions');
+      await lineHandler('/deny bash');
+      expect(setPermission).toHaveBeenCalledWith('bash', 'deny');
+      expect(savePermissions).toHaveBeenCalled();
+    });
+
+    it('handles /allow without tool name', async () => {
+      await lineHandler('/allow');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Usage');
+    });
+
+    it('handles /deny without tool name', async () => {
+      await lineHandler('/deny');
+      const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+      expect(output).toContain('Usage');
     });
   });
 });

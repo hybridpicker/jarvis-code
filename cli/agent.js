@@ -11,6 +11,8 @@ const { gatherProjectContext } = require('./context');
 const { fitToContext, getUsage } = require('./context-engine');
 const { autoSave } = require('./session');
 const { getMemoryContext } = require('./memory');
+const { checkPermission } = require('./permissions');
+const { confirm } = require('./safety');
 
 const MAX_ITERATIONS = 30;
 const CWD = process.cwd();
@@ -150,6 +152,25 @@ async function processInput(userInput) {
       }
 
       console.log(formatToolCall(fnName, args));
+
+      // Permission check
+      const perm = checkPermission(fnName);
+      if (perm === 'deny') {
+        console.log(`${C.red}  ✗ ${fnName}: denied by permissions${C.reset}`);
+        const toolMsg = { role: 'tool', content: `DENIED: Tool '${fnName}' is blocked by permissions`, tool_call_id: callId };
+        conversationMessages.push(toolMsg);
+        apiMessages.push(toolMsg);
+        continue;
+      }
+      if (perm === 'ask') {
+        const ok = await confirm(`  Allow ${fnName}?`);
+        if (!ok) {
+          const toolMsg = { role: 'tool', content: `CANCELLED: User declined ${fnName}`, tool_call_id: callId };
+          conversationMessages.push(toolMsg);
+          apiMessages.push(toolMsg);
+          continue;
+        }
+      }
 
       // Execute (async for confirmation prompts)
       const toolResult = await executeTool(fnName, args);
