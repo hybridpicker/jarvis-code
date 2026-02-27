@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npx jest --forceExit --coverage --ci
+
+      - name: Check coverage threshold
+        run: |
+          npx jest --forceExit --coverage --ci --coverageReporters=json-summary 2>/dev/null
+          node -e "
+            const c = require('./coverage/coverage-summary.json').total;
+            const stmts = c.statements.pct;
+            const branches = c.branches.pct;
+            console.log('Statements:', stmts + '%');
+            console.log('Branches:', branches + '%');
+            if (stmts < 90) { console.error('Statement coverage below 90%!'); process.exit(1); }
+            if (branches < 80) { console.error('Branch coverage below 80%!'); process.exit(1); }
+            console.log('Coverage thresholds passed.');
+          "
